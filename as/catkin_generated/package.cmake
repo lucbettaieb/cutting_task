@@ -1,0 +1,7 @@
+set(_CATKIN_CURRENT_PACKAGE "as")
+set(as_MAINTAINER "bxc237 <bxc237@todo.todo>")
+set(as_DEPRECATED "")
+set(as_VERSION "0.0.0")
+set(as_BUILD_DEPENDS "roscpp" "atlas_conversions" "atlas_msgs" "trajectory_msgs" "actionlib" "actionlib_msgs" "eigen" "hku_msgs" "tf" "geometry_msgs" "atlas_hand_kinematics" "actionlib_servers" "kdl" "kdl_parser" "message_generation" "orocos_kdl" "task_variables" "jacobian_publisher" "manipulation_balancing" "std" "roslib" "lljc" "low_level_joint_controller" "std_msgs" "simple_action_client" "eigen_to_msg")
+set(as_RUN_DEPENDS "simple_action_client" "std_msgs" "roscpp" "atlas_conversions" "atlas_msgs" "trajectory_msgs" "actionlib" "actionlib_msgs" "eigen" "hku_msgs" "tf" "geometry_msgs" "atlas_hand_kinematics" "actionlib_servers" "kdl" "kdl_parser" "message_runtime" "orocos_kdl" "task_variables" "std" "roslib" "jacobian_publisher" "lljc" "low_level_joint_controller" "manipulation_balancing" "eigen_to_msg")
+set(as_BUILDTOOL_DEPENDS "catkin" "catkin_simple")

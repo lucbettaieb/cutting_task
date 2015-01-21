@@ -1,0 +1,365 @@
+//example_wall_cutting: test main
+// this function illustrates how to use the class "TaskToJointInterp"
+// in task space, define a desired cutting task as:
+
+
+#include <ros/ros.h>
+#include <task_to_joint_interp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <iostream>
+#include <joint_space_planner_awm14/JointSpacePlannerAction.h>
+#include <Eigen/Eigen>
+#include <actionlib/server/simple_action_server.h>
+#include <math.h>
+using namespace std;
+
+
+Eigen::VectorXd penalty_weights;
+Eigen::VectorXd starting_pose_8dof;
+Eigen::VectorXd ending_pose_8dof;
+
+
+// This should go in a header
+class JointSpacePlannerActionServer {
+	private:
+		ros::NodeHandle nh_;
+		actionlib::SimpleActionServer<joint_space_planner_awm14::JointSpacePlannerAction> as_;
+
+		joint_space_planner_awm14::JointSpacePlannerGoal goal_;
+		joint_space_planner_awm14::JointSpacePlannerResult result_;
+		joint_space_planner_awm14::JointSpacePlannerFeedback feedback_;
+
+	public:
+		// Constructor
+		JointSpacePlannerActionServer();
+
+		// Action server primary invokable action
+		void computePath(
+			const actionlib::SimpleActionServer<joint_space_planner_awm14::JointSpacePlannerAction>::GoalConstPtr& goal);
+
+};
+
+
+// Crazy constructor...
+JointSpacePlannerActionServer::JointSpacePlannerActionServer() :
+   as_(nh_, "joint_space_planner", boost::bind(&JointSpacePlannerActionServer::computePath, this, _1),false) 
+{
+    ROS_INFO("in constructor of JointSpacePlannerActionServer");
+    // do any other desired initializations here...specific to your implementation
+
+    as_.start(); //start the server running
+
+}
+
+
+Eigen::Vector2d get_nth_vertex_in_wall_frame(int n, std::vector<geometry_msgs::Point32> poly_line, double wall_angle, double wall_distance) {
+
+	geometry_msgs::Point32 nth_vertex_point = poly_line[n];
+	Eigen::Vector3d  nth_vertex(nth_vertex_point.x, nth_vertex_point.y, nth_vertex_point.z); // Inefficient, infrequent operation. Not important enough to fix.
+
+	// The wall normal is pointing at the robot
+	double wall_normal_x = -sin(wall_angle); // x is along the axis which is parallel to walking foward.
+	double wall_normal_y = -cos(wall_angle); // y is along the axis which is parallel to walking to the left.
+	double wall_normal_z = 0.0;
+
+
+	Eigen::Vector3d wall_normal(wall_normal_x, wall_normal_y, wall_normal_z);
+	Eigen::Vector3d wall_origin = wall_normal * -wall_distance;
+	double vertex_distance_to_wall = wall_normal.dot(nth_vertex-wall_origin);
+	Eigen::Vector3d closest_point_on_wall_from_vertex = nth_vertex - vertex_distance_to_wall * wall_normal;
+	Eigen::Vector3d closest_point_relative_to_origin = closest_point_on_wall_from_vertex - wall_origin;
+	Eigen::Vector3d z_axis(0.d,0.d,1.d);
+	Eigen::Vector3d y_axis_in_wall = -wall_normal.cross(z_axis);
+	double y_displacement = y_axis_in_wall.dot(closest_point_relative_to_origin);
+	double z_displacement = nth_vertex[2];
+
+	std::cout << "displacement in the plane of the wall: <y, z> = " << y_displacement << ", " << z_displacement << std::endl;
+        return Eigen::Vector2d(y_displacement,z_displacement);
+}
+
+eigen_to_msg::vec_of_vec8dof compute_optimal_path(double wall_distance, double wall_angle, geometry_msgs::Polygon poly_line) {
+
+	eigen_to_msg::vec_of_vec8dof optimal_path;
+	for( int n = 1; n < poly_line.points.size() - 1; n++ ) {
+
+		Eigen::Vector2d yz_segment_start = get_nth_vertex_in_wall_frame(n-1,poly_line.points, wall_angle, wall_distance);
+		Eigen::Vector2d yz_segment_end = get_nth_vertex_in_wall_frame(n,poly_line.points, wall_angle, wall_distance);
+
+
+		// here, call WSN's functionality called "compute optimal path"
+//		is_good_lineseg = taskToJointInterp.compute_task_line_seg_to_jnt_space(a_tool_start_wrt_local_world, y0 - y2, z0 - z2, nsamps3);
+//		if(!is_good_lineseg)
+		{
+			// TODO: The action server should abandon the request if the request is not a valid request.
+		}
+		// now, load all the results from the joint space into 
+	}
+
+	return optimal_path;
+}
+
+vector<eigen_to_msg::vec8dof> create_default_response() {
+	// Generate a nonsense sequence of vec8dof objects. This is just used for the template needed for integrating with the rest of the system.
+
+
+	vector<eigen_to_msg::vec8dof> default_response;
+	for(int a = 0; a < 20; a++ ) {
+		eigen_to_msg::vec8dof fake_vec8dof;
+		fake_vec8dof.a0=rand();
+		fake_vec8dof.a1=rand();
+		fake_vec8dof.a2=rand();
+		fake_vec8dof.a3=rand();
+		fake_vec8dof.a4=rand();
+		fake_vec8dof.a5=rand();
+		fake_vec8dof.a6=rand();
+		fake_vec8dof.a7=rand();
+		default_response.push_back(fake_vec8dof);
+	}
+	return default_response;
+}
+
+void JointSpacePlannerActionServer::computePath(const actionlib::SimpleActionServer<joint_space_planner_awm14::JointSpacePlannerAction>::GoalConstPtr& goal) {
+
+	double wall_distance = goal->wall_distance;
+	double wall_angle = goal->wall_angle;
+	geometry_msgs::Polygon poly_line = goal->desired_R3_path;
+
+	std::vector<Eigen::VectorXd> optimal_path;
+        std::vector<Eigen::VectorXd> smoothed_path;
+
+//	vector<eigen_to_msg::vec8dof> result_path = create_default_response();
+	eigen_to_msg::vec_of_vec8dof result_path;
+
+	result_path.vecs8dof = create_default_response();
+
+	// Convert geometry_msgs into  Eigen::Vector3d, then compute the joint space path
+	//vector<Eigen::Vector3d> poly_line_eigen_version = convertPolygonToVectorEigenVector3d(poly_line);
+	optimal_path = compute_optimal_path(wall_distance, wall_angle, poly_line_eigen_version);
+	result_path 
+	// convert the output type to the data type require by the action specification:
+	// The containing object already has a result_object
+//	result_->suggested_joint_space_path = optimal_path;
+	result_.suggested_joint_path = result_path;
+	as_.setSucceeded(result_);
+}
+
+
+int main(int argc, char **argv) {
+
+	ros::init(argc, argv, "joint_space_planner_awm14");
+
+	JointSpacePlannerActionServer as;
+	cout << "test\n";
+	ros::Rate rate(100);
+	while(ros::ok()) {
+		ros::spinOnce();
+		rate.sleep();
+		
+	}
+
+/*
+	Eigen::Affine3d cutting_tool_transform;
+	cutting_tool_transform.linear() = Eigen::Matrix3d::Identity();
+	cutting_tool_transform.translation() << 0, 0.17, 0.05; 
+	taskToJointInterp.set_tool_transform(cutting_tool_transform);
+	Eigen::Affine3d a_tool_start_wrt_local_world; // start pose for cutting, expressed as tool frame w/rt local world frame
+*/
+/*
+	for(int n=0; n<poly_line.size() - 2; n++) 
+
+
+		std::cout << "currently, the body of this method does nothing. it is simply here so we can figure out how to communicate with the rest of the system";
+		std::cout << "the result attribute of the action server should be populated with a vector<Eigen::VectorXd>";
+
+		Eigen::Vector2d start_yz_coord = getNthVertexInWallFrame(n, poly_line);
+		Eigen::Vector2d end_yz_coord = getNthVertexInWallFrame(n+1, poly_line);
+
+		double y_start = start_yz_coord[0];
+		double z_start = start_yz_coord[1];
+	
+		double y_end = end_yz_coord[0];
+		double z_end = end_yz_coord[1];
+
+		double delta_y = y_end - y_start;
+		double delta_z = z_end - z_start;
+
+		int nsamps = 15; // really, this should be a max distance between points on the interpolated line, then this should be computed based on start_yz_coord - end_yz_coord
+
+		//wtf are these?
+		double y0 = -0.2;
+		double z0 = 0.6;
+		double y1 = 0.2;
+		double z1 = 0.6;
+		double y2 = 0.2;
+		double z2 = 1.1;
+		double y3 = -0.2;
+		double z3 = 0.6;
+
+		// wtf are this? fabulous variable names. vertex1, vertex2. ... ... ... ...
+		vertex1_pose_8dof << 0.52, 0.575, 0.473247, 1.46327, 2.34046, -1.62357, 0.484771, 0.379758;
+		vertex2_pose_8dof << 0.76, 0.45, 0.0664423, 1.40459, 2.23814, -2.18696, 0.203388, 0.901071;
+
+		Eigen::Matrix3d Rwall;
+		// define a coordinate frame on the wall, with respect to local world frame;
+
+		// the wall orientation is defined to have z-axis pointing up (w/rt pelvis frame, i.e. parallel to z_pelvis)
+		// and with x-axis pointing into the wall (antiparallel to the surface normal)
+		// at wall_ang=0, Atlas is facing the wall, with his pelvis x-axis parallel to the wall-frame x-axis
+		// at this pose, the wall-frame orientation is aligned with Atlas's pelvis frame orientation
+
+		Rwall << cos(wall_ang), -sin(wall_ang), 0,
+			sin(wall_ang), cos(wall_ang), 0,
+			0, 0, 1;
+		ROS_INFO("task frame specified at distance: %f ", wall_dist);
+		std::cout << "Rwall: " << std::endl;
+		std::cout << Rwall << std::endl;
+
+		// define wall origin w/rt local world frame:    
+		Eigen::Vector3d wall_ctr_wrt_local_world_frame; // origin of the wall frame, expressed in the local world frame
+		Eigen::Vector3d wall_offset;
+		wall_offset << wall_dist, 0.0, 0.0;
+		wall_ctr_wrt_local_world_frame = Rwall*wall_offset;
+
+		// create a nominal hand orientation:
+		// choose y-axis pointing towards wall, z-axis (initially) pointing up
+		Eigen::Vector3d y_hand;
+		y_hand = Rwall.col(0); //since the wall-frame x-axis points INTO the wall, choose this for the desired hand orientation
+		// UPDATE: meaning of y_hand is now y_tool; specify the desired TOOL position and orientation
+		Eigen::Vector3d z_hand;
+		z_hand << 0, 0, 1; // start w/ z-hand pointing up
+		Eigen::Vector3d x_hand = y_hand.cross(z_hand); // just make sure x_hand is consistent with z and y
+		Eigen::Matrix3d R_des_start;
+		R_des_start.col(0) = x_hand; //nominal tool orientation, to begin search for cuttability
+		R_des_start.col(1) = y_hand;
+		R_des_start.col(2) = z_hand;
+
+		a_tool_start_wrt_local_world.linear() = R_des_start; // specified orientation of tool frame for start of cut
+		// need to specify the tool origin for start of cut, w/rt local world frame
+
+		Eigen::Vector3d pt_wrt_wall; // a sample point, expressed in the wall frame
+		Eigen::Vector3d pt_wrt_local_world_frame; // the same sample point, but expressed in the local world frame
+
+		pt_wrt_wall << 0.0, y0, z0; // start point for cutting, w/rt task coords in wall frame;
+		pt_wrt_local_world_frame = Rwall * pt_wrt_wall + wall_ctr_wrt_local_world_frame; // convert to local world frame
+		// install this as displacement of starting tool frame w/rt local world frame
+		a_tool_start_wrt_local_world.translation() = pt_wrt_local_world_frame; // this completes specifying the tool start pose, wrt local world frame
+
+		// now have a complete specification of the task: start point to end point for desired line-segment cut
+		// attempt to compute optimal path from start to end, in straight line segment
+		bool is_good_lineseg;
+		// the following call does LOTS of work!
+		is_good_lineseg = taskToJointInterp.compute_task_line_seg_to_jnt_space(a_tool_start_wrt_local_world, y1 - y0, z1 - z0, nsamps1);
+		if (!is_good_lineseg) {
+		    ROS_WARN("bad line segment!  Unreachable.  Halting");
+		    return 0;
+		} else {
+		    ROS_INFO("completed finding IK options for lineseg 1");
+		}
+		taskToJointInterp.set_end_pose(vertex1_pose_8dof); // this is how to enforce an end pose
+		taskToJointInterp.compute_optimal_path(); // result is in internal variable optimal_path_
+		ROS_INFO("getting a copy of the resulting solution...");
+		taskToJointInterp.get_soln(optimal_path_seg1);
+		int nlayers;
+		nlayers = optimal_path_seg1.size(); //this had better be the same as nsamps!!
+
+		taskToJointInterp.get_soln(optimal_path_seg2);
+		nlayers = optimal_path_seg2.size(); //this had better be the same as nsamps!!
+		cout << "second segment, number of samples: = " << nlayers << endl;
+		// append this to net soln 
+
+		// repeat the process for segment 3:
+		pt_wrt_wall << 0.0, y2, z2; // start point for cutting, w/rt task coords in wall frame;
+		pt_wrt_local_world_frame = Rwall * pt_wrt_wall + wall_ctr_wrt_local_world_frame; // convert to local world frame
+		// install this as displacement of starting tool frame w/rt local world frame
+		a_tool_start_wrt_local_world.translation() = pt_wrt_local_world_frame; // this completes specifying the tool start pose, wrt local world frame
+
+		// now have a complete specification of the task: start point to end point for desired line-segment cut
+		// attempt to compute optimal path from start to end, in straight line segment
+
+		// the following call does LOTS of work!
+		if (!is_good_lineseg) {
+		    ROS_WARN("bad line segment!  Unreachable.  Halting");
+		    return 0;
+		}
+
+		taskToJointInterp.set_start_pose(vertex2_pose_8dof); // this is how to enforce a start pose   
+		//taskToJointInterp.set_end_pose(vertex2_pose_8dof); // leave end pt free
+		taskToJointInterp.compute_optimal_path(); // result is in internal variable optimal_path_
+		ROS_INFO("segment 3: getting a copy of the resulting solution...");
+		taskToJointInterp.get_soln(optimal_path_seg3);
+		nlayers = optimal_path_seg3.size(); //this had better be the same as nsamps!!
+
+		//xxxx concatenate and print out the net 8dof soln:
+		optimal_path.clear();
+		nlayers = optimal_path_seg1.size();
+		for (int ilayer = 0; ilayer < nlayers; ilayer++) {
+		    //cout<<"ilayer: "<<ilayer<<" node: "<<optimal_path[ilayer].transpose()<<endl;
+		    cout << optimal_path_seg1[ilayer].transpose() << endl;
+		    optimal_path.push_back(optimal_path_seg1[ilayer]);
+		}
+
+		nlayers = optimal_path_seg2.size();
+		for (int ilayer = 0; ilayer < nlayers; ilayer++) {
+		    //cout<<"ilayer: "<<ilayer<<" node: "<<optimal_path[ilayer].transpose()<<endl;
+		    cout << optimal_path_seg2[ilayer].transpose() << endl;
+		    optimal_path.push_back(optimal_path_seg2[ilayer]);
+		}
+		nlayers = optimal_path_seg3.size();
+		for (int ilayer = 0; ilayer < nlayers; ilayer++) {
+		    //cout<<"ilayer: "<<ilayer<<" node: "<<optimal_path[ilayer].transpose()<<endl;
+		    cout << optimal_path_seg3[ilayer].transpose() << endl;
+		    optimal_path.push_back(optimal_path_seg3[ilayer]);
+		}
+
+		//now, smooth the result and save it:
+		//smoothed_path.resize(nlayers); // not used yet--maybe later, if used as a server
+		// now, try smoothing the trajectory:
+		Eigen::MatrixXd M_apx, M_apx_sm; // put the IK path in matrix M_apx, and fill the smoothed path into M_apx_sm
+
+
+		cout << "filling x" << endl;
+		Eigen::VectorXd x(nlayers);
+		for (int i = 0; i < nlayers; i++)
+		    x(i) = i + 1; // these are just sequential values, 1 through nlayers
+
+		// int npose = nlayers/3; // select a deliberately smaller number of poses for spline approx; TUNABLE
+		M_apx.resize(nlayers, 8); // path has nlayers steps, each of which is 8DOF
+		M_apx_sm.resize(nlayers, 8); //smoothed path will be the same size, but this is not necessary;
+		// e.g., could have a sparse initial path, then generate finer-resolution intermediate
+		// points from the spline approx
+
+		// copying path from optimal_path vector of Eigen::VectorXd to Eigen::MatrixXd
+		cout << "filling M_apx" << endl;
+		for (int ilayer = 0; ilayer < nlayers; ilayer++) {
+		    M_apx.row(ilayer) = optimal_path[ilayer];
+		}
+
+		Eigen::VectorXd xx(nlayers);
+		cout << "setting xx spacing: " << endl;
+		xx.setLinSpaced(nlayers, x(0), x(x.size() - 1));
+
+
+		PP pp[8];
+		//cout<<"populating pp..."<<endl;
+		for (int i = 0; i < 8; i++)
+		    pp[i] = octave::csaps(x, M_apx.col(i), 0.8); // this gets the interpolation coeff's from input, one joint at a time
+
+		// this uses the spline coeffs to smooth and interpolate the original points; 
+		// smoothed path is in M_apx_sm
+		for (int i = 0; i < 8; i++) {
+		    M_apx_sm.col(i) = octave::ppval(pp[i], xx);
+		}
+
+		// print the results to a file, one row at a time
+
+		pFile = fopen("cut_traj_8DOF_smoothed.txt", "w");
+		for (int ilayer = 0; ilayer < nlayers; ilayer++) {
+		    for (int j = 0; j < 8; j++) {
+			fprintf(pFile, "%8.3f", M_apx_sm(ilayer, j));
+		    }
+		    fprintf(pFile, "\n");
+		}
+		fclose(pFile);*/
+//	}
+}

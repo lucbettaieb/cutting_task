@@ -1,0 +1,257 @@
+/*
+ * cut_controller
+ *
+ * A ROS node to manage other programs to
+ * 1) Find a wall, get a <d, theta> (Russell/Tipakorn)
+ * 2) Figure out if the wall is reachable
+ * 3) Launch polyline UI / recieve a geometry_msg::Polygon (vector of Point32's (points.at(i).x, y, z)
+ * 4) Send <d, theta> to Joint-space planning action server to see if it is usable.
+ * 5) Joint planning node will then figure out motions and send controller a eigen_to_msg::vec_of_vec8dof
+ * 6) This in turn will be sent to the action controller node written by Buming
+ * 
+ * Luc Bettaieb
+ * bettaieb@case.edu
+ *
+ */
+#include <ros/ros.h>
+
+//#include <hku_msgs>
+#include <atlas_msgs/AtlasState.h>
+#include <geometry_msgs/Pose2D.h>
+#include <geometry_msgs/Polygon.h>
+#include <eigen_to_msg/vec_of_vec8dof.h>
+#include <joint_space_planner_awm14/JointSpacePlannerAction.h>
+
+#include <actionlib/client/simple_action_client.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <tf/transform_listener.h>
+
+ros::Subscriber sub_atlas_state_, sub_wallfind_, sub_jointPlan_;
+ros::Publisher pub_vecofvec8dof_;
+
+float z_offset = 0;
+
+
+geometry_msgs::Pose2D wall_pos_;
+geometry_msgs::Polygon poly_line_;
+eigen_to_msg::vec_of_vec8dof jointspace_path_;
+int cont;
+
+//Shuts the node down if anomalies have been detected.
+
+void anomaly(const atlas_msgs::AtlasState &state) {
+    float z_accel_tol = 4.5;
+    float z_foot_ftol = 500;
+    //Will subscribe to /atlas/atlas_state and return true if something weird happens
+    //For now, if the IMU measurement of gravity is pointing in not the Z axis with some tolerance, stop.
+
+    //standing lfoot force z669 rfoot force z706
+    //standing linear acceleration z ~ 10
+    //on back lfoot force z-10 rfoot force z382
+    //on back linear acceleration z ~ -1.15
+
+    if (ros::ok() && state.linear_acceleration.z < z_accel_tol) {
+        if (state.l_foot.force.z < z_foot_ftol && state.r_foot.force.z < z_foot_ftol) {
+            ROS_INFO("An anomaly has occurred!  Atlas likely has fallen over.  Aborting.");
+            ros::shutdown();
+        }
+    }
+}
+
+void gotWall(const geometry_msgs::Pose2D &wall) {
+    ROS_INFO("Got a wall, thanks buddy.");
+    wall_pos_.x = wall.x;
+    wall_pos_.theta = wall.theta;
+}
+
+void gotPolyline(const geometry_msgs::Polygon &poly) {
+    
+    ROS_INFO("Got a polyline, thanks friend.");
+
+     poly_line_.points.resize(poly.points.size());
+
+    for (int i = 0; i < poly.points.size(); i++) {
+        poly_line_.points.at(i).x = poly.points.at(i).x;
+        poly_line_.points.at(i).y = poly.points.at(i).y;
+
+
+       
+
+        poly_line_.points.at(i).z = poly.points.at(i).z +z_offset; //add pelvis here
+    }
+}
+
+void breakpoint() {
+    std::cout << "Enter 0 to continue" << std::endl; //Poor-man's break point a la WSN
+    std::cin >> cont;
+
+    if (cont != 0) {
+        ROS_INFO("I asked you to enter 0 and you didn't, so I'm assuming you would like to exit.");
+        ros::shutdown();
+    }
+    cont = -1;
+}
+
+void doneCB(const actionlib::SimpleClientGoalState& state, const joint_space_planner_awm14::JointSpacePlannerResultConstPtr& result) {
+    ROS_INFO("doneCB state: [%s]", state.toString().c_str());
+    std::cout << result->suggested_joint_path << std::endl;
+    jointspace_path_ = result -> suggested_joint_path;
+
+}
+
+void activeCB() {
+    ROS_INFO("Goal just went active.");
+}
+
+void feedbackCB(const joint_space_planner_awm14::JointSpacePlannerFeedbackConstPtr& feedback) {
+    ROS_INFO("Whats a feedback?");
+}
+
+int main(int argc, char** argv) {
+    ros::init(argc, argv, "cut_controller");
+    ros::NodeHandle nh;
+    ros::start(); //not sure if this line is necessary, but amw14 had it in his example
+    //ros::Rate rate(100);
+    ros::spinOnce();
+    
+tf::TransformListener tf_listener; // create a transform listener object
+tf::StampedTransform transform; // holder for transform result
+tf::Vector3 frame_origin; // 3x1 vector to hold origin of right grasp frame
+
+ //wait until receive valid frames
+ 
+    cont = -1;
+
+    //Setting x of the Pose2D for the wall to be negative to check if a wall has been found
+    wall_pos_.x = -1;
+    //Subscribe to atlas/atlas_state and use anomaly as a callback
+    //sub_atlas_state_ = nh.subscribe("/atlas/atlas_state", 10, anomaly);
+
+    //Wallfinder subscriber (will update the Pose2D global to reflect the wall's current location relative to ATLAS)
+    sub_wallfind_ = nh.subscribe("/plane_info", 10, gotWall);
+
+    //Polyline UI subscriber to get a geometry_msgs::Polygon
+    sub_jointPlan_ = nh.subscribe("/polyline_vertice", 10, gotPolyline);
+
+    //Publisher to publish vec_of_vec8dof to /team1/ac
+    pub_vecofvec8dof_ = nh.advertise<eigen_to_msg::vec_of_vec8dof>("/team1/ac", 1);
+
+    while (ros::ok()) {
+        
+        bool tf_not_ready = true;
+        int ntries = 0;
+        while (tf_not_ready) {
+            try {
+                tf_not_ready = false;
+                tf_listener.lookupTransform("/pelvis", "/r_foot", ros::Time(0), transform);
+            } catch (tf::TransformException ex) { //do nothing
+                tf_not_ready = true;
+                ntries++;
+                ROS_INFO("waiting for pelvis frame; ntries = %d", ntries);
+                ros::Duration(0.3).sleep();
+            }
+        }
+
+        tf_listener.lookupTransform("/pelvis", "/r_foot", ros::Time(0), transform);
+        frame_origin = transform.getOrigin();
+        
+        ROS_INFO("pelvis height with respect to the r_foot : %f and respect to the ground: %f", -frame_origin[2], -frame_origin[2] + 0.05);
+        z_offset = -frame_origin[2] + 0.05;
+        
+        //ROS_INFO("Please select points that correspond to a wall in RViz."); //Time to select points in RViz for getting the wall.
+        //breakpoint(); //Once they have been selected, <d, theta> is assigned to x, theta in wall_pos_
+
+        ROS_INFO("Please define a PolyLine using Li's PolyLine interface."); //Select a polyline using Li's GUI
+        breakpoint(); //Once it has been selected, the callback should get the Polygon sent and assign it to poly_line_
+
+        //////////////////////////////////////////
+        //JointSpacePlanner Action Client things//
+        //////////////////////////////////////////
+
+        //Creating a new SimpleActionClient of Action type JointSpacePlannerAction
+        actionlib::SimpleActionClient<joint_space_planner_awm14::JointSpacePlannerAction> action_client("joint_space_planner", true);
+
+        //While the server is being set up, wait for 5 seconds
+        ROS_INFO("Waiting for server..");
+        bool server_exists = action_client.waitForServer(ros::Duration(5.0));
+
+        //If after 5 seconds, the server does not exist, shutdown the node because something has gone wrong.
+        if (!server_exists) {
+            ROS_WARN("Could not connect to joint_space_planner server.  Halting");
+            ros::shutdown;
+        }
+        ROS_INFO("Connected to action server");
+
+        //Create a goal and send it to the action server.
+        joint_space_planner_awm14::JointSpacePlannerGoal goal; //polygon and 2 doubles for pose2d
+
+        //Set the goal variable to the appropriate attributes
+        //        std::cout << poly_line_.points.at(0).x << std::endl;
+        //        std::cout << poly_line_.points.at(0).y << std::endl;
+        //        std::cout << poly_line_.points.at(0).z << std::endl;
+
+        ros::spinOnce();
+
+        goal.desired_R3_path = poly_line_;
+        goal.wall_distance = 0.79;
+        goal.wall_angle = 0.00;
+
+        //goal.wall_distance = wall_pos_.x;
+        //goal.wall_angle = wall_pos_.theta;
+
+        //Send the goal and have a doneCB.  I'm assuming that the doneCB is where 
+        //action_client.sendGoal(goal, &doneCB);
+
+
+        action_client.sendGoal(goal, &doneCB, &activeCB, &feedbackCB);
+
+        //action_client.sendGoal(goal);
+        // bool finished_before_timeout = action_client.waitForResult(ros::Duration(30.0));
+
+        //if(finished_before_timeout){
+        //using http://wiki.ros.org/actionlib_tutorials/Tutorials/SimpleActionClient as reference
+        //using also example_action_client as reference
+        //i tried doing a doneCB but that gave me problems, too... Perhaps try to change doneCB around to try that again to getResult
+
+        //  joint_space_planner_awm14::JointSpacePlannerActionResultConstPtr result = action_client.getResult(); //something wrong here...
+        // ROS_INFO("got result");
+        //jointspace_path_ = result.result.suggested_joint_path;
+        // } else{
+        //     ROS_INFO("Action didn't finish before timeout.");
+        // }
+        //        
+        //Send jointspace_path_ so that action controller can use it to do arm and leg things
+        //
+        //        jointspace_path_.vecs8dof.resize(2);
+        //        jointspace_path_.vecs8dof.at(0).a0 = 0.7;
+        //        jointspace_path_.vecs8dof.at(0).a1 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a2 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a3 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a4 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a5 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a6 = 0;
+        //        jointspace_path_.vecs8dof.at(0).a7 = 0;
+        //        
+        //        jointspace_path_.vecs8dof.at(1).a0 = 0.4;
+        //        jointspace_path_.vecs8dof.at(1).a1 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a2 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a3 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a4 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a5 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a6 = 0;
+        //        jointspace_path_.vecs8dof.at(1).a7 = 0;
+        //        
+        //        
+        //        
+        pub_vecofvec8dof_.publish(jointspace_path_);
+
+        ros::spinOnce();
+        breakpoint();
+    }
+
+
+    ros::spin();
+    return 0;
+}

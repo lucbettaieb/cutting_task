@@ -1,0 +1,8 @@
+prefix=/home/bxc237/ros_workspace/team_hku_drc/catkin/install
+
+Name: CuttingTaskCoordinator
+Description: Description of CuttingTaskCoordinator
+Version: 0.0.0
+Cflags: 
+Libs: -L/home/bxc237/ros_workspace/team_hku_drc/catkin/install/lib 
+Requires: roscpp hku_msgs actionlib std_msgs geometry_msgs eigen_to_msg

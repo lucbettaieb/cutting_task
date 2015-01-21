@@ -1,0 +1,13 @@
+#goal definition
+geometry_msgs/Polygon desired_R3_path
+float64 wall_distance
+float64 wall_angle
+---
+#result definition
+eigen_to_msg/vec_of_vec8dof suggested_joint_path
+int32 error_code
+string error_name
+---
+#feeback definition
+# I lied, there is no feedback
+int32 test

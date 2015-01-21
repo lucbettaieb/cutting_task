@@ -1,0 +1,11 @@
+#goal definition
+geometry_msgs/Vector3[] desired_real_coordinate_path
+float64 wall_distance
+float64 wall_angle
+---
+#result definition
+eigen_to_msg/vec8dof[] suggested_joint_space_path
+---
+#feeback definition
+# I lied, there is no feedback
+int32 test

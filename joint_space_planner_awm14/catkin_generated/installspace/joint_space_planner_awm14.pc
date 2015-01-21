@@ -1,0 +1,8 @@
+prefix=/home/bxc237/ros_workspace/team_hku_drc/catkin/install
+
+Name: joint_space_planner_awm14
+Description: Description of joint_space_planner_awm14
+Version: 0.0.0
+Cflags: -I/home/bxc237/ros_workspace/team_hku_drc/catkin/install/include
+Libs: -L/home/bxc237/ros_workspace/team_hku_drc/catkin/install/lib 
+Requires: std_msgs roscpp atlas_conversions atlas_msgs trajectory_msgs actionlib actionlib_msgs hku_msgs tf geometry_msgs atlas_hand_kinematics actionlib_servers kdl_parser message_runtime task_variables roslib jacobian_publisher eigen_to_msg example_wall_cutting

@@ -1,0 +1,7 @@
+set(_CATKIN_CURRENT_PACKAGE "CuttingTaskCoordinator")
+set(CuttingTaskCoordinator_MAINTAINER "bettaiebluc <bettaiebluc@todo.todo>")
+set(CuttingTaskCoordinator_DEPRECATED "")
+set(CuttingTaskCoordinator_VERSION "0.0.0")
+set(CuttingTaskCoordinator_BUILD_DEPENDS "roscpp" "hku_msgs" "actionlib" "std_msgs" "geometry_msgs" "eigen_to_msg")
+set(CuttingTaskCoordinator_RUN_DEPENDS "roscpp" "hku_msgs" "actionlib" "std_msgs" "geometry_msgs" "eigen_to_msg")
+set(CuttingTaskCoordinator_BUILDTOOL_DEPENDS "catkin" "catkin_simple")

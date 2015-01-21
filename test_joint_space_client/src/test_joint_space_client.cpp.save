@@ -1,0 +1,58 @@
+#include <ros/ros.h>
+
+#include <actionlib/client/simple_action_client.h>
+#include <actionlib/client/terminal_state.h>
+#include <joint_space_planner_awm14/JointSpacePlannerAction.h>
+#include <stdexcept>
+#include <stdlib.h>
+#include <iostream>
+
+
+void doneCb(const actionlib::SimpleClientGoalState& state,
+        const joint_space_planner_awm14::JointSpacePlannerResultConstPtr& result) {
+	ROS_INFO("Joint space planner is finished");
+	std::vector<eigen_to_msg::vec8dof> joint_path = result -> suggested_joint_path.vecs8dof;
+
+	for(int a=0; a < joint_path.size(); a++)
+	{
+		std::cout << "joint_path.a0" << joint_path[a].a0 << "\t";
+		std::cout << std::endl;
+	}
+}
+
+void activeCb() {
+    ROS_INFO("Goal just went active");
+
+}
+
+void feedbackCb(const joint_space_planner_awm14::JointSpacePlannerFeedbackConstPtr& feedback) {
+}
+
+int main(int argc, char **argv) {
+	ros::init(argc, argv, "test_joint_space_client");
+	ros::start();
+	ros::Rate rate(100);
+	// Create the action client
+	actionlib::SimpleActionClient<joint_space_planner_awm14::JointSpacePlannerAction> ac("joint_space_planner", true);
+	joint_space_planner_awm14::JointSpacePlannerGoal goal;
+
+	double distance = 0.6;
+	double angle = 0;
+
+	geometry_msgs::Polygon fake_path_polygon = generate_fake_path();
+
+	goal->desired_R3_path = fake_path_polygon;
+	goal->wall_distance = 0.6;
+	goal->wall_angle = 0;
+
+	ROS_INFO("checking for live actionServer...");
+	ac.waitForServer();
+	ROS_INFO("Action server is running, sending goal.");
+	ac.sendGoal(goal, &doneCb, &activeCb, &feedbackCb);
+
+	while(ros::ok()) {
+		ros::spinOnce();
+		rate.sleep();
+	}
+	return 0;
+}

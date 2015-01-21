@@ -1,0 +1,8 @@
+prefix=/home/bxc237/ros_workspace/team_hku_drc/catkin/install
+
+Name: test_joint_space_client
+Description: Description of test_joint_space_client
+Version: 0.0.0
+Cflags: 
+Libs: -L/home/bxc237/ros_workspace/team_hku_drc/catkin/install/lib 
+Requires: roscpp actionlib geometry_msgs eigen_to_msg

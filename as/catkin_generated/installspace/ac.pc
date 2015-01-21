@@ -1,0 +1,8 @@
+prefix=/home/bxc237/ros_workspace/team_hku_drc/catkin/install
+
+Name: ac
+Description: Description of ac
+Version: 0.0.0
+Cflags: -I/home/bxc237/ros_workspace/team_hku_drc/catkin/install/include
+Libs: -L/home/bxc237/ros_workspace/team_hku_drc/catkin/install/lib 
+Requires: roscpp std_msgs actionlib
