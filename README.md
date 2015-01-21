@@ -1,6 +1,9 @@
 ###Readme for Assignment 10
 ------------------------------
+#####Project video:
+https://www.youtube.com/watch?v=xvdxuhTOwYc
 
+#####Setup instuctions (must run from drc_class repo)
 VRC_CHEATS_ENABLED=1 roslaunch hku_worlds drc_practice_task_6.launch
 
 For better visibility, delete "starting pen" model.
