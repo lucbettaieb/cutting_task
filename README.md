@@ -1,11 +1,11 @@
-###Readme for Assignment 10
+### Readme for Assignment 10
 ------------------------------
-#####About
+##### About
 This an 'after the fact' repository for my final project for eecs397: software development for the darpa robotics challenge.  The purpose of this project was to make ATLAS perform an intergrated wall-cut.  First, a wall would be identified via a point cloud.  Next, a poly-line would be created on that wall.  After running certain computations, atlas would then 'cut'* the points of the polyline.  It never worked 100%, but it did perform the behavior requested!
 
 *not cut, trace.
 
-#####Project Contributors
+##### Project Contributors
 Luc Bettaieb
 
 Alex Marunowski - https://github.com/marunowskia
@@ -14,7 +14,7 @@ Buming Chen
 
 Li Shao
 
-#####Project video:
+##### Project video:
 https://www.youtube.com/watch?v=xvdxuhTOwYc
 
 #####Setup instuctions (must run from drc_class repo)
